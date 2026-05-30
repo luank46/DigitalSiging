@@ -1,37 +1,30 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.Configuration;
 
 namespace DigitalSigning.Api.Middleware
 {
     /// <summary>
     /// API Key validation filter — kiểm tra header ApiKey trước khi cho phép request.
-    /// Mapping từ ApiKeyHeaderCheckAttribute cũ.
+    /// Danh sách key được cấu hình trong appsettings.json (AppSettings:ApiKeys).
     /// </summary>
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
     public class ApiKeyHeaderCheckAttribute : TypeFilterAttribute
     {
-        /// <summary>
-        /// Cho phép tùy chỉnh danh sách API key khi dùng attribute.
-        /// </summary>
-        public ApiKeyHeaderCheckAttribute(params string[] allowedKeys)
-            : base(typeof(ApiKeyHeaderCheckFilter))
+        public ApiKeyHeaderCheckAttribute() : base(typeof(ApiKeyHeaderCheckFilter))
         {
-            Arguments = new object[] { allowedKeys.Length > 0 ? allowedKeys : DefaultAllowedKeys };
         }
-
-        private static readonly string[] DefaultAllowedKeys =
-        {
-            "3EC79C17-63ED-4166-BD58-04397B94312C",
-            "030097002468"
-        };
 
         private class ApiKeyHeaderCheckFilter : IActionFilter
         {
             private readonly string[] _allowedKeys;
 
-            public ApiKeyHeaderCheckFilter(string[] allowedKeys)
+            public ApiKeyHeaderCheckFilter(IConfiguration configuration)
             {
-                _allowedKeys = allowedKeys;
+                var keys = configuration.GetValue<string>("AppSettings:ApiKeys")
+                    ?? configuration.GetValue<string>("ApiKeys")
+                    ?? "3EC79C17-63ED-4166-BD58-04397B94312C;030097002468";
+                _allowedKeys = keys.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             }
 
             public void OnActionExecuting(ActionExecutingContext context)

@@ -136,6 +136,8 @@ namespace DigitalSigning.Core
             });
 
             // ---- OpenTelemetry (Tracing + Metrics) ---------------------------------------
+            var otlpEndpoint = configuration.GetValue<string>("Otlp:Endpoint");
+
             services.AddOpenTelemetry()
                 .WithTracing(builder =>
                 {
@@ -154,6 +156,18 @@ namespace DigitalSigning.Core
                         })
                         .AddHttpClientInstrumentation()
                         .AddConsoleExporter();
+
+                    // Add OTLP exporter if endpoint is configured
+                    if (!string.IsNullOrEmpty(otlpEndpoint))
+                    {
+                        builder.AddOtlpExporter(options =>
+                        {
+                            options.Endpoint = new Uri(otlpEndpoint);
+                            var headers = configuration.GetValue<string>("Otlp:Headers");
+                            if (!string.IsNullOrEmpty(headers))
+                                options.Headers = headers;
+                        });
+                    }
                 })
                 .WithMetrics(builder =>
                 {
@@ -163,6 +177,18 @@ namespace DigitalSigning.Core
                         .AddAspNetCoreInstrumentation()
                         .AddHttpClientInstrumentation()
                         .AddConsoleExporter();
+
+                    // Add OTLP exporter if endpoint is configured
+                    if (!string.IsNullOrEmpty(otlpEndpoint))
+                    {
+                        builder.AddOtlpExporter(options =>
+                        {
+                            options.Endpoint = new Uri(otlpEndpoint);
+                            var headers = configuration.GetValue<string>("Otlp:Headers");
+                            if (!string.IsNullOrEmpty(headers))
+                                options.Headers = headers;
+                        });
+                    }
                 });
 
             // ---- Metrics Hosted Service ---------------------------------------------------

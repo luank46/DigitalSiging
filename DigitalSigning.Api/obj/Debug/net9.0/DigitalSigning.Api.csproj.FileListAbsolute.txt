@@ -80,3 +80,9 @@ D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Api\bin\D
 D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Api\bin\Debug\net9.0\Swashbuckle.AspNetCore.Swagger.dll
 D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Api\bin\Debug\net9.0\Swashbuckle.AspNetCore.SwaggerGen.dll
 D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Api\bin\Debug\net9.0\Swashbuckle.AspNetCore.SwaggerUI.dll
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Api\obj\Debug\net9.0\DigitalSigning.Api.sourcelink.json
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Api\bin\Debug\net9.0\Google.Protobuf.dll
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Api\bin\Debug\net9.0\Grpc.Core.Api.dll
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Api\bin\Debug\net9.0\Grpc.Net.Client.dll
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Api\bin\Debug\net9.0\Grpc.Net.Common.dll
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Api\bin\Debug\net9.0\OpenTelemetry.Exporter.OpenTelemetryProtocol.dll

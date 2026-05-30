@@ -22,6 +22,7 @@ namespace DigitalSigning.Workers.Provider
         private readonly IProviderFactory _providerFactory;
         private readonly IServiceProvider _serviceProvider;
         private readonly IConnectionMultiplexer _redis;
+        private readonly FileLockService _fileLock;
 
         public Worker(
             ILogger<Worker> logger,
@@ -31,13 +32,15 @@ namespace DigitalSigning.Workers.Provider
             ITransactionService txService,
             IProviderFactory providerFactory,
             IServiceProvider serviceProvider,
-            IConnectionMultiplexer redis)
+            IConnectionMultiplexer redis,
+            FileLockService fileLock)
             : base(logger, publisher, idempotency, consumer, serviceProvider)
         {
             _txService = txService;
             _providerFactory = providerFactory;
             _serviceProvider = serviceProvider;
             _redis = redis;
+            _fileLock = fileLock;
         }
 
         public override TransactionStep Step => TransactionStep.ProviderRequest;
@@ -124,17 +127,9 @@ namespace DigitalSigning.Workers.Provider
                 PrometheusMetrics.RecordStepDuration(TransactionStep.WaitingUserConfirm, 0,
                     message.Provider.ToString());
 
-                // Publish to waiting queue
-                var waitingMsg = new QueueMessage
-                {
-                    MaGiaoDich = message.MaGiaoDich,
-                    TenantId = message.TenantId,
-                    Provider = message.Provider,
-                    Step = TransactionStep.WaitingUserConfirm,
-                    TraceId = message.TraceId,
-                    Attempt = message.Attempt,
-                };
-                await Publisher.PublishAsync(waitingMsg);
+                // Publish to Provider queue với IsWaiting=true — WaitingWorker sẽ poll Redis
+                // Bản thân ProviderWorker không cần queue message cho waiting
+                // WaitingWorker sẽ poll Redis và tạo message mới nếu cần
             }
             else
             {

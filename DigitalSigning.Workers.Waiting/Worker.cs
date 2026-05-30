@@ -172,6 +172,8 @@ namespace DigitalSigning.Workers.Waiting
                     }
 
                     // Publish message back to Provider queue for polling
+                    // Dùng Step=ProviderRequest để routing đến ProviderQueue
+                    // (không dùng WaitingUserConfirm vì WaitingQueue không có consumer)
                     var providerMessage = new QueueMessage
                     {
                         MaGiaoDich = item.TransactionId,
@@ -185,7 +187,7 @@ namespace DigitalSigning.Workers.Waiting
                             "MISA-CA" => ProviderType.Misa,
                             _ => ProviderType.Vnpt
                         },
-                        Step = TransactionStep.WaitingUserConfirm,
+                        Step = TransactionStep.ProviderRequest,
                         TraceId = item.TransactionId,
                         Attempt = item.AttemptCount,
                     };

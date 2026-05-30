@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using DigitalSigning.Core.Models;
 using DigitalSigning.Core.Enums;
 using DigitalSigning.Core.MongoDB;
+using DigitalSigning.Core.Providers;
 using MongoDB.Driver;
 
 namespace DigitalSigning.Core.Repositories
@@ -27,7 +28,12 @@ namespace DigitalSigning.Core.Repositories
 
         public async Task UpdateStatusAsync(string maGiaoDich, TransactionStatus newStatus, TransactionStep newStep)
         {
-            var filter = Builders<Transaction>.Filter.Eq(t => t.MaGiaoDich, maGiaoDich);
+            // Guard: không ghi đè Completed/Failed by retry hoặc timeout branch
+            var filter = Builders<Transaction>.Filter.And(
+                Builders<Transaction>.Filter.Eq(t => t.MaGiaoDich, maGiaoDich),
+                Builders<Transaction>.Filter.Nin(t => t.CurrentStatus, new[]
+                    { TransactionStatus.Completed, TransactionStatus.Failed }));
+
             var update = Builders<Transaction>.Update
                 .Set(t => t.CurrentStatus, newStatus)
                 .Set(t => t.CurrentStep, newStep)
@@ -37,7 +43,13 @@ namespace DigitalSigning.Core.Repositories
 
         public async Task UpdateFinalStatusAsync(string maGiaoDich, string maTrangThaiKy, string? message, string? sad)
         {
-            var filter = Builders<Transaction>.Filter.Eq(t => t.MaGiaoDich, maGiaoDich);
+            // Guard: KHÔNG ghi đè nếu đã DA_KY — chỉ update khi chưa có trạng thái thành công
+            var filter = Builders<Transaction>.Filter.And(
+                Builders<Transaction>.Filter.Eq(t => t.MaGiaoDich, maGiaoDich),
+                Builders<Transaction>.Filter.Or(
+                    Builders<Transaction>.Filter.Ne(t => t.MaTrangThaiKy, SignHelper.MA_TRANG_THAI_DA_KY),
+                    Builders<Transaction>.Filter.Eq(t => t.MaTrangThaiKy, null)));
+
             var update = Builders<Transaction>.Update
                 .Set(t => t.MaTrangThaiKy, maTrangThaiKy)
                 .Set(t => t.Message, message)

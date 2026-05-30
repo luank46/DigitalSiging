@@ -13,24 +13,25 @@ namespace DigitalSigning.Core.MessageQueue.Consumers
     /// Generic RabbitMQ message consumer.
     /// Deserializes JSON payloads into <see cref="QueueMessage"/> and dispatches each
     /// to a handler provided by the caller (typically <see cref="WorkerBase.BackgroundWorker"/>).
-    /// Handles ack/nack, logging, and prefetch configuration.
+    ///
+    /// Important guarantees:
+    ///   - Deserialization failures → Nack + requeue=false (message không thể xử lý, discard)
+    ///   - Processing failures (exception trong handler) → Nack + requeue=true
+    ///     để message được retry hoặc route đến DLX/DLQ
+    ///   - Channel được tạo mới mỗi lần start để tránh stale channel sau connection recovery
     /// </summary>
     public sealed class MessageConsumer : Interfaces.IMessageConsumer, IDisposable
     {
         private readonly ILogger<MessageConsumer> _logger;
         private readonly string _queueName;
-        private readonly IModel _channel;
+        private readonly RabbitMqConnection _connection;
+        private IModel? _channel;
 
         public MessageConsumer(ILogger<MessageConsumer> logger, RabbitMqConnection connection, string queueName)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _connection = connection ?? throw new ArgumentNullException(nameof(connection));
             _queueName = queueName ?? throw new ArgumentNullException(nameof(queueName));
-
-            if (connection?.Connection == null)
-                throw new ArgumentException("RabbitMqConnection must be initialized.", nameof(connection));
-
-            _channel = connection.Connection.CreateModel();
-            _channel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
         }
 
         /// <inheritdoc/>
@@ -40,6 +41,10 @@ namespace DigitalSigning.Core.MessageQueue.Consumers
         public Task StartConsumingAsync(Func<QueueMessage, CancellationToken, Task> handler, CancellationToken cancellationToken)
         {
             if (handler == null) throw new ArgumentNullException(nameof(handler));
+
+            // Tạo channel mới mỗi lần start — tránh stale channel
+            _channel = _connection.CreateChannel();
+            _channel.BasicQos(prefetchSize: 0, prefetchCount: 10, global: false);
 
             var consumer = new EventingBasicConsumer(_channel);
 
@@ -60,6 +65,7 @@ namespace DigitalSigning.Core.MessageQueue.Consumers
                     {
                         _logger.LogWarning("Failed to deserialize message from queue {Queue}. DeliveryTag={Tag}",
                             _queueName, ea.DeliveryTag);
+                        // Không thể deserialize → discard luôn (không retry được)
                         _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: false);
                         return;
                     }
@@ -69,11 +75,15 @@ namespace DigitalSigning.Core.MessageQueue.Consumers
 
                     await handler(message, cancellationToken);
 
+                    // Handler thành công → Ack
                     _channel.BasicAck(ea.DeliveryTag, multiple: false);
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: false);
+                    // Graceful shutdown: Nack + requeue=true để message không bị mất
+                    _logger.LogInformation("Message TxId={TxId} nacked (requeue=true) during shutdown",
+                        message?.MaGiaoDich ?? "(unknown)");
+                    _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: true);
                 }
                 catch (Exception ex)
                 {
@@ -81,7 +91,9 @@ namespace DigitalSigning.Core.MessageQueue.Consumers
                         "Failed to process message TxId={TxId} from queue {Queue}",
                         message?.MaGiaoDich ?? "(unknown)", _queueName);
 
-                    _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: false);
+                    // Handler thất bại → Nack + requeue=true
+                    // Message sẽ được requeue và route đến worker khác hoặc DLX nếu có
+                    _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: true);
                 }
             };
 
@@ -95,8 +107,12 @@ namespace DigitalSigning.Core.MessageQueue.Consumers
 
         public void Dispose()
         {
-            try { _channel?.Close(); } catch { }
-            _channel?.Dispose();
+            if (_channel != null)
+            {
+                try { _channel?.Close(); } catch { }
+                _channel?.Dispose();
+                _channel = null;
+            }
         }
     }
 }

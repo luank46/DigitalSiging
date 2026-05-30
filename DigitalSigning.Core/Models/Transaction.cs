@@ -316,6 +316,11 @@ namespace DigitalSigning.Core.Models
         [BsonElement("providerSessionId")]
         [JsonPropertyName("providerSessionId")]
         public string? ProviderSessionId { get; set; }
+
+        /// <summary>Md5 hash của file gốc — dùng cho file-level lock</summary>
+        [BsonElement("lockMd5Hash")]
+        [JsonPropertyName("lockMd5Hash")]
+        public string? LockMd5Hash { get; set; }
     }
 
     // ── Nested models ───────────────────────────────────────────────────

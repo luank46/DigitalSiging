@@ -98,5 +98,10 @@ namespace DigitalSigning.Core.Settings
         public RedisSettings Redis { get; set; } = new();
         public string ServiceName { get; set; } = "DigitalSigningImproved";
         public List<FileConfig> FileConfigs { get; set; } = new();
+
+        /// <summary>Allowed API keys for authentication</summary>
+        public string ApiKeys { get; set; } = "3EC79C17-63ED-4166-BD58-04397B94312C;030097002468";
+        /// <summary>API key for file upload service</summary>
+        public string UploadApiKey { get; set; } = "3EC79C17-63ED-4166-BD58-04397B94312C";
     }
 }

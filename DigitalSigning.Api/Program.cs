@@ -20,6 +20,9 @@ builder.Services.AddObservability(builder.Configuration);
 // Configure Serilog as the logging provider
 builder.Host.UseDigitalSigningSerilog();
 
+// Register file-level distributed lock service
+builder.Services.AddSingleton<FileLockService>();
+
 // Register legacy services (AccountService, RedisCacheService)
 builder.Services.AddSingleton<IAccountService, AccountService>();
 builder.Services.AddSingleton<IAsyncCacheService>(sp =>
@@ -71,14 +74,26 @@ builder.Services.AddSwaggerGen(options =>
 
 
 
-// CORS (allow all origins for development — restrict in production)
+// CORS — restrict origins from config in production, allow all in development
+var corsOrigins = builder.Configuration.GetValue<string>("Cors:Origins") ?? "*";
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        if (corsOrigins == "*")
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        }
+        else
+        {
+            var origins = corsOrigins.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            policy.WithOrigins(origins)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
     });
 });
 
@@ -104,6 +119,13 @@ if (app.Environment.IsDevelopment())
 
 // CORS
 app.UseCors();
+
+// HTTPS redirect (production)
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+    app.UseHsts();
+}
 
 // Routing
 app.UseRouting();

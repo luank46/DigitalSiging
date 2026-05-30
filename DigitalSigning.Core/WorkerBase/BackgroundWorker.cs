@@ -17,11 +17,12 @@ namespace DigitalSigning.Core.WorkerBase
     /// Automatically consumes messages from the queue mapped to <see cref="Step"/>
     /// and dispatches them to <see cref="ProcessCoreAsync"/>.
     ///
-    /// Features:
-    ///   - Retry with configurable max attempts and exponential backoff
-    ///   - DLQ routing when max retries exceeded
-    ///   - Idempotency check before processing
-    ///   - Tracing/metrics integration
+    /// Retry strategy:
+    ///   - Retry → publish message mới (attempt+1) đến exchange → ACK message cũ
+    ///   - Hết retries → DLQ → NACK (không requeue)
+    ///   - Không retry + không DLQ → NACK + requeue (safe fallback)
+    ///
+    /// Lỗi handler không throw ra ngoài — đã được xử lý trong retry/DLQ logic.
     /// </summary>
     public abstract class BackgroundWorker : BackgroundService
     {
@@ -31,17 +32,13 @@ namespace DigitalSigning.Core.WorkerBase
         protected readonly IMessageConsumer Consumer;
         private readonly IServiceProvider? _serviceProvider;
 
-        // Optional DI — resolved lazily so derived workers don't need to carry them
         private IDlqRepository? _dlqRepo;
         private ITransactionService? _txService;
 
-        /// <summary>Maximum retry attempts before routing to DLQ. Override to customize.</summary>
+        private bool _handledCurrentMessage; // flag: retry đã được publish
+
         protected virtual int MaxRetryAttempts => 3;
-
-        /// <summary>Base delay in ms for exponential backoff (attempt N → delay = BaseRetryDelayMs * 2^N).</summary>
         protected virtual int BaseRetryDelayMs => 2_000;
-
-        /// <summary>Whether to route failed messages to the DLQ after max retries.</summary>
         protected virtual bool EnableDlq => true;
 
         protected BackgroundWorker(
@@ -60,34 +57,13 @@ namespace DigitalSigning.Core.WorkerBase
                 EnsureServices(_serviceProvider);
         }
 
-        /// <summary>
-        /// The pipeline step this worker processes.
-        /// Maps to the RabbitMQ queue name via <see cref="MessageQueue.MessagePublisher"/>.
-        /// </summary>
         public abstract TransactionStep Step { get; }
 
-        /// <summary>
-        /// Core processing logic for a single message.
-        /// Implemented by derived classes (e.g. FilePrepare, Hash, Provider workers).
-        /// Throw on failure — the base class handles retry/DLQ routing.
-        /// </summary>
         protected abstract Task ProcessCoreAsync(QueueMessage message, CancellationToken ct);
 
-        /// <summary>
-        /// Called once on startup before the consume loop begins.
-        /// Override to perform one-time initialization (e.g. create temp directories).
-        /// </summary>
         protected virtual Task OnStartAsync(CancellationToken ct) => Task.CompletedTask;
-
-        /// <summary>
-        /// Called once on graceful shutdown.
-        /// Override to perform cleanup.
-        /// </summary>
         protected virtual Task OnStopAsync(CancellationToken ct) => Task.CompletedTask;
 
-        /// <summary>
-        /// Get required optional services — called lazily so the DI graph stays simple.
-        /// </summary>
         private void EnsureServices(IServiceProvider? sp)
         {
             if (sp == null) return;
@@ -105,20 +81,23 @@ namespace DigitalSigning.Core.WorkerBase
             {
                 await OnStartAsync(stoppingToken);
 
-                // Start consuming — each message is dispatched to ProcessCoreAsync.
-                // This call blocks until cancellation or connection loss.
                 await Consumer.StartConsumingAsync(
                     async (message, ct) =>
                     {
                         using var _ = Logger.BeginScope(new { MaGiaoDich = message.MaGiaoDich, Step = Step });
+                        _handledCurrentMessage = false;
+
                         try
                         {
-                            // 1. Core processing (idempotency is handled by RabbitMQ ack semantics)
                             await ProcessCoreAsync(message, ct);
+
+                            // Nếu ProcessCoreAsync không throw → thành công
+                            // Nếu có retry được publish từ HandleFailureAsync, _handledCurrentMessage = true
                         }
                         catch (OperationCanceledException) when (ct.IsCancellationRequested)
                         {
-                            // Graceful shutdown — rethrow to stop the loop.
+                            // Graceful shutdown — rethrow để nack+requeue
+                            _handledCurrentMessage = false;
                             throw;
                         }
                         catch (Exception ex)
@@ -127,10 +106,20 @@ namespace DigitalSigning.Core.WorkerBase
                                 "Error processing message for TxId={TxId} at step {Step} (attempt {Attempt})",
                                 message.MaGiaoDich, Step, message.Attempt);
 
-                            // 3. Handle retry / DLQ
                             await HandleFailureAsync(message, ex, ct);
+                        }
 
-                            // Don't rethrow — the failure has been handled (retry queued or DLQ'd)
+                        // Nếu message đã được xử lý (retry published hoặc DLQ'd) → throw exception
+                        // để consumer nack (không requeue vì đã có message mới / DLQ)
+                        // Nếu không xử lý được → throw exception với requeue=true
+                        // (consumer nack với requeue=true để retry queue tự nhiên)
+
+                        // TH1: đã publish retry message → OK, message cũ được ack
+                        // TH2: đã DLQ → OK, message cũ được ack
+                        // TH3: lỗi ko xử lý được → NACK+requeue=true (exception throw)
+                        if (!_handledCurrentMessage)
+                        {
+                            throw new Exception("Processing failed — will be retried via requeue");
                         }
                     },
                     stoppingToken);
@@ -150,7 +139,8 @@ namespace DigitalSigning.Core.WorkerBase
         }
 
         /// <summary>
-        /// Handles a processing failure by either retrying with backoff or routing to DLQ.
+        /// Handle failure: retry with backoff hoặc route to DLQ.
+        /// Set _handledCurrentMessage = true nếu đã publish retry hoặc DLQ.
         /// </summary>
         private async Task HandleFailureAsync(QueueMessage message, Exception exception, CancellationToken ct)
         {
@@ -158,9 +148,8 @@ namespace DigitalSigning.Core.WorkerBase
 
             if (attempt < MaxRetryAttempts)
             {
-                // Retry with exponential backoff
+                // Retry with exponential backoff — publish message mới
                 int delayMs = Math.Min(BaseRetryDelayMs * (int)Math.Pow(2, attempt), 60_000);
-                var nextRunAt = DateTime.UtcNow.AddMilliseconds(delayMs);
 
                 var retryMessage = new QueueMessage
                 {
@@ -172,7 +161,7 @@ namespace DigitalSigning.Core.WorkerBase
                     Attempt = attempt,
                     TraceId = message.TraceId,
                     Payload = message.Payload,
-                    NextRunAt = nextRunAt,
+                    NextRunAt = DateTime.UtcNow.AddMilliseconds(delayMs),
                 };
 
                 await Publisher.PublishAsync(retryMessage);
@@ -181,7 +170,8 @@ namespace DigitalSigning.Core.WorkerBase
                     "Scheduled retry #{Attempt} for {MaGiaoDich} at step {Step} in {Delay}ms",
                     attempt, message.MaGiaoDich, Step, delayMs);
 
-                // Update transaction status to reflect retry
+                _handledCurrentMessage = true;
+
                 if (_txService != null)
                 {
                     try
@@ -191,70 +181,58 @@ namespace DigitalSigning.Core.WorkerBase
                             TransactionEventType.ErrorOccurred,
                             $"Retry #{attempt} at step {Step}: {exception.Message}");
                     }
-                    catch { /* non-fatal */ }
+                    catch { }
                 }
             }
-            else
+            else if (EnableDlq && _dlqRepo != null)
             {
                 // Max retries exceeded — route to DLQ
                 Logger.LogError(
                     "Max retries ({MaxRetry}) exceeded for {MaGiaoDich} at step {Step}. Routing to DLQ.",
                     MaxRetryAttempts, message.MaGiaoDich, Step);
 
-                if (EnableDlq && _dlqRepo != null)
+                try
                 {
-                    try
+                    await _dlqRepo.StoreAsync(new DlqMessage
                     {
-                        var dlqMessage = new DlqMessage
+                        OriginalId = message.MessageId,
+                        FailedStep = Step,
+                        ErrorCode = ErrorCode.UnexpectedException,
+                        ErrorMessage = $"Max retries exceeded: {exception.Message}",
+                        Payload = JsonSerializer.Serialize(new
                         {
-                            OriginalId = message.MessageId,
-                            FailedStep = Step,
-                            ErrorCode = ErrorCode.UnexpectedException,
-                            ErrorMessage = $"Max retries exceeded: {exception.Message}",
-                            Payload = JsonSerializer.Serialize(new
-                            {
-                                message.MaGiaoDich,
-                                message.TenantId,
-                                message.Provider,
-                                message.Step,
-                                message.Attempt,
-                                Exception = exception.ToString()
-                            }),
-                            AttemptCount = attempt,
-                        };
+                            message.MaGiaoDich, message.TenantId, message.Provider,
+                            message.Step, message.Attempt, Exception = exception.ToString()
+                        }),
+                        AttemptCount = attempt,
+                    });
 
-                        await _dlqRepo.StoreAsync(dlqMessage);
-                        Logger.LogInformation("DLQ entry created for {MaGiaoDich}", message.MaGiaoDich);
+                    Logger.LogInformation("DLQ entry created for {MaGiaoDich}", message.MaGiaoDich);
+                    _handledCurrentMessage = true;
 
-                        // Update transaction status to Failed
-                        if (_txService != null)
+                    if (_txService != null)
+                    {
+                        try
                         {
-                            try
-                            {
-                                await _txService.UpdateStatusAsync(
-                                    message.MaGiaoDich,
-                                    TransactionStatus.Failed,
-                                    Step);
-
-                                await _txService.RecordEventAsync(
-                                    message.MaGiaoDich,
-                                    TransactionEventType.ErrorOccurred,
-                                    $"DLQ after {attempt} attempts: {exception.Message}");
-                            }
-                            catch { /* non-fatal */ }
+                            await _txService.UpdateStatusAsync(message.MaGiaoDich, TransactionStatus.Failed, Step);
+                            await _txService.RecordEventAsync(message.MaGiaoDich,
+                                TransactionEventType.ErrorOccurred,
+                                $"DLQ after {attempt} attempts: {exception.Message}");
                         }
-                    }
-                    catch (Exception dlqEx)
-                    {
-                        Logger.LogError(dlqEx, "Failed to store DLQ entry for {MaGiaoDich}", message.MaGiaoDich);
+                        catch { }
                     }
                 }
-                else
+                catch (Exception dlqEx)
                 {
-                    Logger.LogWarning(
-                        "DLQ disabled or repository unavailable for {MaGiaoDich} — discarding message",
-                        message.MaGiaoDich);
+                    Logger.LogError(dlqEx, "Failed to store DLQ entry for {MaGiaoDich}", message.MaGiaoDich);
                 }
+            }
+            else
+            {
+                Logger.LogWarning(
+                    "DLQ disabled for {MaGiaoDich} at step {Step} — message will be requeued",
+                    message.MaGiaoDich, Step);
+                // _handledCurrentMessage remains false → consumer sẽ nack+requeue
             }
         }
     }

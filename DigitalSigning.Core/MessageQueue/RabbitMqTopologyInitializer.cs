@@ -96,6 +96,7 @@ namespace DigitalSigning.Core.MessageQueue
                                  arguments: null);
 
             // Declare retry queues with per-step TTL
+            // Mỗi retry queue sau TTL sẽ chuyển message sang exchange với routing key giữ nguyên
             var retryDelays = new[] { 5_000, 30_000, 120_000, 300_000 }; // 5s, 30s, 120s, 300s
             for (int i = 0; i < retryDelays.Length; i++)
             {
@@ -103,7 +104,8 @@ namespace DigitalSigning.Core.MessageQueue
                 var retryArgs = new Dictionary<string, object>
                 {
                     { "x-dead-letter-exchange", exchangeName },
-                    { "x-dead-letter-routing-key", "" },
+                    // Giữ nguyên routing key gốc để message retry route đúng queue step
+                    { "x-dead-letter-routing-key", "step.retry_to_main" },
                     { "x-message-ttl", retryDelays[i] }
                 };
                 channel.QueueDeclare(queue: retryQueue,
@@ -111,9 +113,20 @@ namespace DigitalSigning.Core.MessageQueue
                                      exclusive: false,
                                      autoDelete: false,
                                      arguments: retryArgs);
-                // Bind retry queue vào exchange
+                // Bind retry queue vào exchange — publish trực tiếp đến retry queue này
                 channel.QueueBind(queue: retryQueue, exchange: exchangeName, routingKey: $"step.retry.{i}");
             }
+
+            // Bind đặc biệt cho step.retry_to_main → tất cả các queue step
+            // Khi message từ retry queue timeout, nó sẽ đc route đến tất cả step queues
+            // Nhưng mỗi worker chỉ consume queue của step mình, nên không duplicate
+            channel.QueueBind(queue: FilePrepareQueue, exchange: exchangeName, routingKey: "step.retry_to_main");
+            channel.QueueBind(queue: HashQueue, exchange: exchangeName, routingKey: "step.retry_to_main");
+            channel.QueueBind(queue: ProviderQueue, exchange: exchangeName, routingKey: "step.retry_to_main");
+            channel.QueueBind(queue: WaitingQueue, exchange: exchangeName, routingKey: "step.retry_to_main");
+            channel.QueueBind(queue: AppendQueue, exchange: exchangeName, routingKey: "step.retry_to_main");
+            channel.QueueBind(queue: UploadQueue, exchange: exchangeName, routingKey: "step.retry_to_main");
+            channel.QueueBind(queue: WebhookQueue, exchange: exchangeName, routingKey: "step.retry_to_main");
 
             // Bind each step queue to the central Direct exchange with specific routing key
             channel.QueueBind(queue: FilePrepareQueue, exchange: exchangeName, routingKey: FilePrepareRoutingKey);

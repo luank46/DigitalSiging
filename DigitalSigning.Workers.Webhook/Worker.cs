@@ -20,6 +20,7 @@ namespace DigitalSigning.Workers.Webhook
         private readonly ITransactionService _txService;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IMessagePublisher _publisher;
+        private readonly FileLockService _fileLock;
 
         public Worker(
             ILogger<Worker> logger,
@@ -27,12 +28,14 @@ namespace DigitalSigning.Workers.Webhook
             IIdempotencyService idempotency,
             IMessageConsumer consumer,
             ITransactionService txService,
-            IHttpClientFactory httpClientFactory)
+            IHttpClientFactory httpClientFactory,
+            FileLockService fileLock)
             : base(logger, publisher, idempotency, consumer)
         {
             _txService = txService;
             _httpClientFactory = httpClientFactory;
             _publisher = publisher;
+            _fileLock = fileLock;
         }
 
         public override TransactionStep Step => TransactionStep.WebhookNotify;
@@ -113,7 +116,36 @@ namespace DigitalSigning.Workers.Webhook
                 transaction.ProviderType.ToString(), transaction.TenantId, 0);
             MetricsCollector.CurrentInFlight--;
 
+            // Release file locks để người khác có thể ký
+            await ReleaseFileLocksAsync(transaction);
+
             Logger.LogInformation("WebhookWorker: completed for {MaGiaoDich}", message.MaGiaoDich);
+        }
+
+        /// <summary>
+        /// Release file-level Redis locks for all unsigned files in this transaction.
+        /// Cho phép người khác ký cùng file (học bạ) sau khi giao dịch hoàn tất.
+        /// </summary>
+        private async Task ReleaseFileLocksAsync(Transaction transaction)
+        {
+            if (transaction.UnsignedFiles == null) return;
+
+            foreach (var file in transaction.UnsignedFiles)
+            {
+                if (!string.IsNullOrEmpty(file.Md5Hash))
+                {
+                    try
+                    {
+                        await _fileLock.ReleaseByMd5Async(file.Md5Hash);
+                        Logger.LogInformation("WebhookWorker: released file lock for md5={Md5}", file.Md5Hash);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning(ex, "Failed to release file lock for md5={Md5}", file.Md5Hash);
+                    }
+                }
+            }
+        }
         }
     }
 }

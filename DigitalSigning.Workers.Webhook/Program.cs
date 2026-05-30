@@ -33,6 +33,9 @@ builder.Services.AddSingleton<IMessageConsumer>(sp =>
         sp.GetRequiredService<RabbitMqConnection>(),
         RabbitMqTopologyInitializer.WebhookQueue));
 
+// Register file lock service
+builder.Services.AddSingleton<FileLockService>();
+
 // Register the worker
 builder.Services.AddHostedService<DigitalSigning.Workers.Webhook.Worker>();
 

@@ -86,3 +86,9 @@ D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Workers.F
 D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Workers.FilePrepare\bin\Debug\net9.0\UglyToad.PdfPig.Fonts.dll
 D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Workers.FilePrepare\bin\Debug\net9.0\UglyToad.PdfPig.Tokenization.dll
 D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Workers.FilePrepare\bin\Debug\net9.0\UglyToad.PdfPig.Tokens.dll
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Workers.FilePrepare\obj\Debug\net9.0\DigitalSigning.Workers.FilePrepare.sourcelink.json
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Workers.FilePrepare\bin\Debug\net9.0\Google.Protobuf.dll
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Workers.FilePrepare\bin\Debug\net9.0\Grpc.Core.Api.dll
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Workers.FilePrepare\bin\Debug\net9.0\Grpc.Net.Client.dll
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Workers.FilePrepare\bin\Debug\net9.0\Grpc.Net.Common.dll
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Workers.FilePrepare\bin\Debug\net9.0\OpenTelemetry.Exporter.OpenTelemetryProtocol.dll

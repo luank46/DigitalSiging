@@ -31,6 +31,7 @@ namespace DigitalSigning.Api.Controllers
         private readonly IMetricsService _metricsService;
         private readonly ILogger<LegacySignatureController> _logger;
         private readonly IConnectionMultiplexer _redis;
+        private readonly FileLockService _fileLock;
         private static readonly HttpClient _httpClient = new();
 
         public LegacySignatureController(
@@ -38,13 +39,15 @@ namespace DigitalSigning.Api.Controllers
             IMessagePublisher messagePublisher,
             IMetricsService metricsService,
             ILogger<LegacySignatureController> logger,
-            IConnectionMultiplexer redis)
+            IConnectionMultiplexer redis,
+            FileLockService fileLock)
         {
             _transactionService = transactionService;
             _messagePublisher = messagePublisher;
             _metricsService = metricsService;
             _logger = logger;
             _redis = redis;
+            _fileLock = fileLock;
         }
 
         /// <summary>
@@ -226,6 +229,27 @@ namespace DigitalSigning.Api.Controllers
 
             try
             {
+                // Lấy Md5Hash của file đầu tiên để làm khóa
+                var md5Hash = signModel.FileUnsign?.FirstOrDefault()?.Md5Hash;
+                if (!string.IsNullOrEmpty(md5Hash))
+                {
+                    var lockHandle = await _fileLock.AcquireAsync(md5Hash,
+                        $"SignBase64:{signModel.UserName}",
+                        TimeSpan.FromMinutes(10));
+
+                    if (lockHandle == null)
+                    {
+                        // Có người đang ký file này — trả về lỗi luôn, không tạo transaction
+                        result.Status = 409;
+                        result.Message = "File này đang được người khác ký, vui lòng thử lại sau";
+                        return Ok(result);
+                    }
+
+                    // Lưu lock handle để release sau
+                    HttpContext.Items["FileLockHandle"] = lockHandle;
+                    HttpContext.Items["FileLockMd5"] = md5Hash;
+                }
+
                 var maGiaoDich = Guid.NewGuid().ToString();
 
                 var transaction = new Transaction
@@ -248,7 +272,8 @@ namespace DigitalSigning.Api.Controllers
                     SoLuongFile = signModel.FileUnsign?.Count ?? 0,
                     CurrentStatus = TransactionStatus.Created,
                     CurrentStep = TransactionStep.None,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = DateTime.UtcNow,
+                    LockMd5Hash = md5Hash
                 };
 
                 if (!string.IsNullOrEmpty(signModel.ImageBase64))
@@ -299,6 +324,9 @@ namespace DigitalSigning.Api.Controllers
                 _logger.LogError(ex, "Legacy SignBase64 failed");
                 result.Status = 500;
                 result.Message = ex.Message;
+                // Release lock on failure — lock chỉ giữ khi transaction được tạo thành công
+                if (HttpContext.Items["FileLockHandle"] is IAsyncDisposable lockHandleOnError)
+                    await lockHandleOnError.DisposeAsync();
             }
 
             return Ok(result);
