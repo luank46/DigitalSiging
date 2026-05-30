@@ -1,0 +1,12 @@
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Core\obj\Debug\net9.0\DigitalSigning.Core.csproj.AssemblyReference.cache
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Core\obj\Debug\net9.0\DigitalSigning.Core.GeneratedMSBuildEditorConfig.editorconfig
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Core\obj\Debug\net9.0\DigitalSigning.Core.AssemblyInfoInputs.cache
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Core\obj\Debug\net9.0\DigitalSigning.Core.AssemblyInfo.cs
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Core\obj\Debug\net9.0\DigitalSigning.Core.csproj.CoreCompileInputs.cache
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Core\bin\Debug\net9.0\DigitalSigning.Core.deps.json
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Core\bin\Debug\net9.0\DigitalSigning.Core.dll
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Core\bin\Debug\net9.0\DigitalSigning.Core.pdb
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Core\obj\Debug\net9.0\DigitalSigning.Core.dll
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Core\obj\Debug\net9.0\refint\DigitalSigning.Core.dll
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Core\obj\Debug\net9.0\DigitalSigning.Core.pdb
+D:\AI_WORKSPACE\CLAUDE\KY_SO_NEW\DigitalSigningImproved\DigitalSigning.Core\obj\Debug\net9.0\ref\DigitalSigning.Core.dll

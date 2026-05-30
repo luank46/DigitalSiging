@@ -1,0 +1,6 @@
+@DigitalSigning.Api_HostAddress = http://localhost:5210
+
+GET {{DigitalSigning.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

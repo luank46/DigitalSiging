@@ -1,0 +1,3 @@
+﻿<Project>
+  <Import Project="..\build\DigitalSigning.Api.props" />
+</Project>
