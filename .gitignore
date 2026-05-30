@@ -1,0 +1,72 @@
+# Build results
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+*.so
+*.dylib
+
+# IDE specific files
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.swp
+.idea/
+
+# Logs
+*.log
+*.tmp
+logs/
+
+# NuGet packages
+*.nupkg
+[project.lock.json]
+[packages.lock.json]
+
+# User-specific files
+*.rsuser
+*.dbmdl
+*.jfm
+*.dgml
+*.3dst
+*.dxd
+
+# Error and crash dumps
+*.dmp
+*.mdl
+*.core
+crashdump.*
+
+# Windows specific
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Rider
+.settings/
+modules.xml
+*.DotSettings
+
+# Coverage
+coverage/
+coverage.json
+*.coverlet
+*.trx
+
+# Backup files
+*~
+*.bak
+*.orig
+
+# Environment variables
+.env
+*.env.local
