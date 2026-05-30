@@ -1,0 +1,30 @@
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+
+# Copy project files and restore
+COPY DigitalSigning.Core/DigitalSigning.Core.csproj DigitalSigning.Core/
+COPY DigitalSigning.Api/DigitalSigning.Api.csproj DigitalSigning.Api/
+RUN dotnet restore DigitalSigning.Api/DigitalSigning.Api.csproj
+
+# Copy source and build
+COPY . .
+RUN dotnet publish DigitalSigning.Api/DigitalSigning.Api.csproj \
+    -c Release -o /app --no-restore
+
+# Runtime image
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /app .
+
+ENV ASPNETCORE_URLS=http://+:5000
+ENV ASPNETCORE_ENVIRONMENT=Production
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
+
+EXPOSE 5000
+ENTRYPOINT ["dotnet", "DigitalSigning.Api.dll"]

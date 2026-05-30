@@ -1,0 +1,24 @@
+ARG WORKER=Provider
+
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+
+# Copy project files
+COPY DigitalSigning.Core/DigitalSigning.Core.csproj DigitalSigning.Core/
+COPY DigitalSigning.Workers.${WORKER}/DigitalSigning.Workers.${WORKER}.csproj DigitalSigning.Workers.${WORKER}/
+RUN dotnet restore DigitalSigning.Workers.${WORKER}/DigitalSigning.Workers.${WORKER}.csproj
+
+# Copy source and build
+COPY . .
+RUN dotnet publish DigitalSigning.Workers.${WORKER}/DigitalSigning.Workers.${WORKER}.csproj \
+    -c Release -o /app --no-restore
+
+# Runtime image
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
+WORKDIR /app
+COPY --from=build /app .
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD dotnet DigitalSigning.Workers.${WORKER}.dll --health-check || exit 1
+
+ENTRYPOINT ["dotnet", "DigitalSigning.Workers.${WORKER}.dll"]

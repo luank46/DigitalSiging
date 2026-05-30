@@ -114,7 +114,7 @@ namespace DigitalSigning.Workers.Webhook
 
             PrometheusMetrics.RecordTransactionCompleted(
                 transaction.ProviderType.ToString(), transaction.TenantId, 0);
-            MetricsCollector.CurrentInFlight--;
+            MetricsCollector.DecrementInFlight();
 
             // Release file locks để người khác có thể ký
             await ReleaseFileLocksAsync(transaction);
@@ -145,7 +145,6 @@ namespace DigitalSigning.Workers.Webhook
                     }
                 }
             }
-        }
         }
     }
 }

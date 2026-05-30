@@ -1,11 +1,23 @@
-# Build results
+# Build results (tất cả cấp thư mục)
 bin/
 obj/
+**/bin/
+**/obj/
 *.dll
 *.exe
 *.pdb
 *.so
 *.dylib
+*.xml        # XML docs từ build
+*.nupkg
+*.nuget.props
+*.nuget.targets
+
+# .NET specific
+*.runtimeconfig.json
+*.deps.json
+*.csproj.user
+*.csproj.*.user
 
 # IDE specific files
 .vs/
@@ -26,6 +38,8 @@ logs/
 *.nupkg
 [project.lock.json]
 [packages.lock.json]
+!*.nupkg.props
+!*.nupkg.targets
 
 # User-specific files
 *.rsuser
@@ -70,3 +84,8 @@ coverage.json
 # Environment variables
 .env
 *.env.local
+.env.production
+
+# Production configuration (contains real credentials)
+**/appsettings.Production*.json
+**/appsettings.Staging*.json

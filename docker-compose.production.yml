@@ -1,0 +1,142 @@
+# docker-compose.production.yml — Production environment
+# HA setup: Quorum queues, multi-instance workers, external infrastructure
+# Sử dụng infrastructure bên ngoài (không chạy MongoDB/RabbitMQ/Redis trong compose)
+
+version: "3.9"
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-deploy: &default-deploy
+  restart_policy:
+    condition: any
+    delay: 5s
+    max_attempts: 3
+  update_config:
+    parallelism: 1
+    delay: 10s
+    order: start-first
+  resources:
+    limits:
+      cpus: "2"
+      memory: "4G"
+    reservations:
+      cpus: "1"
+      memory: "2G"
+
+services:
+  # ── API ──────────────────────────────────────────────────────────
+
+  api:
+    image: ghcr.io/${GITHUB_REPOSITORY}/api:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env.production
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      RABBITMQ_QUORUM: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      <<: *default-deploy
+      replicas: 2
+      resources:
+        limits:
+          cpus: "2"
+          memory: "4G"
+    logging: *default-logging
+
+  # ── Workers ──────────────────────────────────────────────────────
+
+  worker-fileprepare:
+    image: ghcr.io/${GITHUB_REPOSITORY}/worker-fileprepare:${TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      RABBITMQ_QUORUM: "true"
+    deploy:
+      <<: *default-deploy
+      replicas: 3
+    logging: *default-logging
+
+  worker-hash:
+    image: ghcr.io/${GITHUB_REPOSITORY}/worker-hash:${TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    deploy:
+      <<: *default-deploy
+      replicas: 2
+    logging: *default-logging
+
+  worker-provider:
+    image: ghcr.io/${GITHUB_REPOSITORY}/worker-provider:${TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      RABBITMQ_QUORUM: "true"
+    deploy:
+      <<: *default-deploy
+      replicas: 15
+      resources:
+        limits:
+          cpus: "4"
+          memory: "8G"
+        reservations:
+          cpus: "2"
+          memory: "4G"
+    logging: *default-logging
+
+  worker-waiting:
+    image: ghcr.io/${GITHUB_REPOSITORY}/worker-waiting:${TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    deploy:
+      <<: *default-deploy
+      replicas: 2
+      resources:
+        limits:
+          cpus: "1"
+          memory: "2G"
+    logging: *default-logging
+
+  worker-append:
+    image: ghcr.io/${GITHUB_REPOSITORY}/worker-append:${TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    deploy:
+      <<: *default-deploy
+      replicas: 2
+    logging: *default-logging
+
+  worker-upload:
+    image: ghcr.io/${GITHUB_REPOSITORY}/worker-upload:${TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    deploy:
+      <<: *default-deploy
+      replicas: 2
+    logging: *default-logging
+
+  worker-webhook:
+    image: ghcr.io/${GITHUB_REPOSITORY}/worker-webhook:${TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    deploy:
+      <<: *default-deploy
+      replicas: 2
+    logging: *default-logging

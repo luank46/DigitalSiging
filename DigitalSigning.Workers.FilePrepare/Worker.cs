@@ -130,7 +130,7 @@ namespace DigitalSigning.Workers.FilePrepare
             // Record metrics
             PrometheusMetrics.RecordStepDuration(TransactionStep.FilePrepare, 0,
                 transaction.ProviderType.ToString());
-            MetricsCollector.CurrentInFlight++;
+            MetricsCollector.IncrementInFlight();
 
             // Publish next step
             await PublishNextAsync(message, TransactionStep.Hash, ct);

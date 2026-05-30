@@ -1,0 +1,219 @@
+# docker-compose.yml — Staging environment
+# Full stack: API + 7 workers + RabbitMQ + MongoDB + Redis
+# Dùng cho CI/CD develop branch và local development
+
+version: "3.9"
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ── Infrastructure ──────────────────────────────────────────────
+
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass admin@123
+    volumes:
+      - redis-data:/data
+    logging: *default-logging
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: "123456789**"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    logging: *default-logging
+
+  # ── Application ─────────────────────────────────────────────────
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: ghcr.io/${GITHUB_REPOSITORY:-digital-signing}/api:staging
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Staging
+      SIGNING_ENCRYPTION_KEY: "${SIGNING_ENCRYPTION_KEY:-dev-key-replace-in-production}"
+      MongoDb__ConnectionString: "mongodb://admin2:password3real@mongodb:27017"
+      MongoDb__DatabaseName: "CHU_KY_DIEN_TU_STAGING"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__UserName: admin
+      RabbitMq__Password: "123456789**"
+      Redis__ConnectionString: "redis:6379,password=admin@123"
+    depends_on:
+      mongodb:
+        condition: service_started
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+    logging: *default-logging
+
+  worker-fileprepare:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        WORKER: FilePrepare
+    image: ghcr.io/${GITHUB_REPOSITORY:-digital-signing}/worker-fileprepare:staging
+    restart: unless-stopped
+    environment:
+      SIGNING_ENCRYPTION_KEY: "${SIGNING_ENCRYPTION_KEY:-dev-key-replace-in-production}"
+      MongoDb__ConnectionString: "mongodb://admin2:password3real@mongodb:27017"
+      MongoDb__DatabaseName: "CHU_KY_DIEN_TU_STAGING"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__UserName: admin
+      RabbitMq__Password: "123456789**"
+      Redis__ConnectionString: "redis:6379,password=admin@123"
+    depends_on:
+      - api
+    logging: *default-logging
+
+  worker-hash:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        WORKER: Hash
+    image: ghcr.io/${GITHUB_REPOSITORY:-digital-signing}/worker-hash:staging
+    restart: unless-stopped
+    environment:
+      SIGNING_ENCRYPTION_KEY: "${SIGNING_ENCRYPTION_KEY:-dev-key-replace-in-production}"
+      MongoDb__ConnectionString: "mongodb://admin2:password3real@mongodb:27017"
+      MongoDb__DatabaseName: "CHU_KY_DIEN_TU_STAGING"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__UserName: admin
+      RabbitMq__Password: "123456789**"
+      Redis__ConnectionString: "redis:6379,password=admin@123"
+    depends_on:
+      - api
+    logging: *default-logging
+
+  worker-provider:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        WORKER: Provider
+    image: ghcr.io/${GITHUB_REPOSITORY:-digital-signing}/worker-provider:staging
+    restart: unless-stopped
+    environment:
+      SIGNING_ENCRYPTION_KEY: "${SIGNING_ENCRYPTION_KEY:-dev-key-replace-in-production}"
+      MongoDb__ConnectionString: "mongodb://admin2:password3real@mongodb:27017"
+      MongoDb__DatabaseName: "CHU_KY_DIEN_TU_STAGING"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__UserName: admin
+      RabbitMq__Password: "123456789**"
+      Redis__ConnectionString: "redis:6379,password=admin@123"
+    depends_on:
+      - api
+    logging: *default-logging
+
+  worker-waiting:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        WORKER: Waiting
+    image: ghcr.io/${GITHUB_REPOSITORY:-digital-signing}/worker-waiting:staging
+    restart: unless-stopped
+    environment:
+      SIGNING_ENCRYPTION_KEY: "${SIGNING_ENCRYPTION_KEY:-dev-key-replace-in-production}"
+      MongoDb__ConnectionString: "mongodb://admin2:password3real@mongodb:27017"
+      MongoDb__DatabaseName: "CHU_KY_DIEN_TU_STAGING"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__UserName: admin
+      RabbitMq__Password: "123456789**"
+      Redis__ConnectionString: "redis:6379,password=admin@123"
+    depends_on:
+      - api
+    logging: *default-logging
+
+  worker-append:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        WORKER: Append
+    image: ghcr.io/${GITHUB_REPOSITORY:-digital-signing}/worker-append:staging
+    restart: unless-stopped
+    environment:
+      SIGNING_ENCRYPTION_KEY: "${SIGNING_ENCRYPTION_KEY:-dev-key-replace-in-production}"
+      MongoDb__ConnectionString: "mongodb://admin2:password3real@mongodb:27017"
+      MongoDb__DatabaseName: "CHU_KY_DIEN_TU_STAGING"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__UserName: admin
+      RabbitMq__Password: "123456789**"
+      Redis__ConnectionString: "redis:6379,password=admin@123"
+    depends_on:
+      - api
+    logging: *default-logging
+
+  worker-upload:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        WORKER: Upload
+    image: ghcr.io/${GITHUB_REPOSITORY:-digital-signing}/worker-upload:staging
+    restart: unless-stopped
+    environment:
+      SIGNING_ENCRYPTION_KEY: "${SIGNING_ENCRYPTION_KEY:-dev-key-replace-in-production}"
+      MongoDb__ConnectionString: "mongodb://admin2:password3real@mongodb:27017"
+      MongoDb__DatabaseName: "CHU_KY_DIEN_TU_STAGING"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__UserName: admin
+      RabbitMq__Password: "123456789**"
+      Redis__ConnectionString: "redis:6379,password=admin@123"
+    depends_on:
+      - api
+    logging: *default-logging
+
+  worker-webhook:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        WORKER: Webhook
+    image: ghcr.io/${GITHUB_REPOSITORY:-digital-signing}/worker-webhook:staging
+    restart: unless-stopped
+    environment:
+      SIGNING_ENCRYPTION_KEY: "${SIGNING_ENCRYPTION_KEY:-dev-key-replace-in-production}"
+      MongoDb__ConnectionString: "mongodb://admin2:password3real@mongodb:27017"
+      MongoDb__DatabaseName: "CHU_KY_DIEN_TU_STAGING"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__UserName: admin
+      RabbitMq__Password: "123456789**"
+      Redis__ConnectionString: "redis:6379,password=admin@123"
+    depends_on:
+      - api
+    logging: *default-logging
+
+volumes:
+  mongodb-data:
+  redis-data:
+  rabbitmq-data:
