@@ -64,6 +64,10 @@ services:
       RabbitMq__UserName: admin
       RabbitMq__Password: "123456789**"
       Redis__ConnectionString: "redis:6379,password=admin@123"
+      RateLimiter__ProviderCapacity: "200"
+      RateLimiter__ProviderRefillRate: "100"
+      RateLimiter__TenantCapacity: "50"
+      RateLimiter__TenantRefillRate: "30"
     depends_on:
       mongodb:
         condition: service_started

@@ -27,10 +27,11 @@ namespace DigitalSigning.Workers.Webhook
             IMessagePublisher publisher,
             IIdempotencyService idempotency,
             IMessageConsumer consumer,
+            IMessageDedupService dedupService,
             ITransactionService txService,
             IHttpClientFactory httpClientFactory,
             FileLockService fileLock)
-            : base(logger, publisher, idempotency, consumer)
+            : base(logger, publisher, idempotency, consumer, dedupService)
         {
             _txService = txService;
             _httpClientFactory = httpClientFactory;

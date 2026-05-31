@@ -19,21 +19,25 @@ namespace DigitalSigning.Workers.Hash
         private readonly ITransactionService _txService;
         private readonly IGridFsService _gridFs;
         private readonly IMessagePublisher _publisher;
+        private readonly FileLockService _fileLock;
 
         public Worker(
             ILogger<Worker> logger,
             IMessagePublisher publisher,
             IIdempotencyService idempotency,
             IMessageConsumer consumer,
+            IMessageDedupService dedupService,
             IHashCalculator hasher,
             ITransactionService txService,
-            IGridFsService gridFs)
-            : base(logger, publisher, idempotency, consumer)
+            IGridFsService gridFs,
+            FileLockService fileLock)
+            : base(logger, publisher, idempotency, consumer, dedupService)
         {
             _hasher = hasher;
             _txService = txService;
             _gridFs = gridFs;
             _publisher = publisher;
+            _fileLock = fileLock;
         }
 
         public override TransactionStep Step => TransactionStep.Hash;
@@ -55,10 +59,29 @@ namespace DigitalSigning.Workers.Hash
                 return;
             }
 
-            // Process each unsigned file: compute hash and update GridFS
+            // Process each unsigned file with file-level lock
             foreach (var file in transaction.UnsignedFiles)
             {
                 if (string.IsNullOrEmpty(file.FileByteId)) continue;
+
+                // File-level lock check (skip if not available — e.g. MD5 not computed yet)
+                if (!string.IsNullOrEmpty(file.Md5Hash))
+                {
+                    var lockHandle = await _fileLock.AcquireAsync(
+                        file.Md5Hash,
+                        $"hash:{message.MaGiaoDich}",
+                        TimeSpan.FromMinutes(5), ct);
+
+                    if (lockHandle == null)
+                    {
+                        Logger.LogWarning(
+                            "HashWorker: file {Md5} is locked by another transaction. Requeuing.",
+                            file.Md5Hash);
+                        throw new InvalidOperationException(
+                            $"File {file.Md5Hash} is being signed by another transaction");
+                    }
+                    await using var _ = lockHandle;
+                }
 
                 var fileBytes = await _gridFs.DownloadFileAsync(file.FileByteId, ct);
                 var hash = await _hasher.CalculateHashAsync(file.FileByteId, ct);

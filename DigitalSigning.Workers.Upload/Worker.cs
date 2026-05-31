@@ -18,19 +18,23 @@ namespace DigitalSigning.Workers.Upload
         private readonly ITransactionService _txService;
         private readonly IGridFsService _gridFs;
         private readonly IMessagePublisher _publisher;
+        private readonly FileLockService _fileLock;
 
         public Worker(
             ILogger<Worker> logger,
             IMessagePublisher publisher,
             IIdempotencyService idempotency,
             IMessageConsumer consumer,
+            IMessageDedupService dedupService,
             ITransactionService txService,
-            IGridFsService gridFs)
-            : base(logger, publisher, idempotency, consumer)
+            IGridFsService gridFs,
+            FileLockService fileLock)
+            : base(logger, publisher, idempotency, consumer, dedupService)
         {
             _txService = txService;
             _gridFs = gridFs;
             _publisher = publisher;
+            _fileLock = fileLock;
         }
 
         public override TransactionStep Step => TransactionStep.Upload;
@@ -58,6 +62,13 @@ namespace DigitalSigning.Workers.Upload
             {
                 Logger.LogInformation("UploadWorker: file {FileName} ready (Md5={Md5})",
                     file.FileName, file.Md5Hash);
+
+                // Release file lock now that signing + append + upload complete
+                if (!string.IsNullOrEmpty(file.Md5Hash))
+                {
+                    await _fileLock.ReleaseByMd5Async(file.Md5Hash);
+                    Logger.LogInformation("UploadWorker: released lock for file {Md5}", file.Md5Hash);
+                }
             }
 
             // Update status

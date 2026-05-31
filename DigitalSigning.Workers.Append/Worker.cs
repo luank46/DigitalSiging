@@ -18,19 +18,23 @@ namespace DigitalSigning.Workers.Append
         private readonly ITransactionService _txService;
         private readonly IGridFsService _gridFs;
         private readonly IMessagePublisher _publisher;
+        private readonly FileLockService _fileLock;
 
         public Worker(
             ILogger<Worker> logger,
             IMessagePublisher publisher,
             IIdempotencyService idempotency,
             IMessageConsumer consumer,
+            IMessageDedupService dedupService,
             ITransactionService txService,
-            IGridFsService gridFs)
-            : base(logger, publisher, idempotency, consumer)
+            IGridFsService gridFs,
+            FileLockService fileLock)
+            : base(logger, publisher, idempotency, consumer, dedupService)
         {
             _txService = txService;
             _gridFs = gridFs;
             _publisher = publisher;
+            _fileLock = fileLock;
         }
 
         public override TransactionStep Step => TransactionStep.AppendSignature;
@@ -59,24 +63,42 @@ namespace DigitalSigning.Workers.Append
                     transaction.SignedFiles.Count, message.MaGiaoDich);
             }
 
-            // For HASH type files, create signed file records from signatures
+            // Check file locks for each unsigned file, then create signed file records
             if (transaction.LoaiKy == "HASH" && transaction.UnsignedFiles != null)
             {
                 foreach (var (file, index) in transaction.UnsignedFiles
                     .Select((f, i) => (f, i)))
                 {
-                    if (index < transaction.Signatures.Count)
+                    if (index >= transaction.Signatures.Count) continue;
+
+                    // Acquire file lock before appending signature
+                    if (!string.IsNullOrEmpty(file.Md5Hash))
                     {
-                        var signedFile = new SignedFile
+                        var lockHandle = await _fileLock.AcquireAsync(
+                            file.Md5Hash,
+                            $"append:{message.MaGiaoDich}",
+                            TimeSpan.FromMinutes(5), ct);
+
+                        if (lockHandle == null)
                         {
-                            Md5Hash = file.Md5Hash ?? "",
-                            FileName = file.FileName ?? $"file_{index}",
-                            Signature = transaction.Signatures[index],
-                            XmlSignature = file.XmlSignature,
-                            NodeSignerPath = file.NodeSignerPath
-                        };
-                        await _txService.AppendSignedFileAsync(message.MaGiaoDich, signedFile);
+                            Logger.LogWarning(
+                                "AppendWorker: file {Md5} locked by another. Requeuing.",
+                                file.Md5Hash);
+                            throw new InvalidOperationException(
+                                $"File {file.Md5Hash} is being signed by another transaction");
+                        }
+                        await using var _ = lockHandle;
                     }
+
+                    var signedFile = new SignedFile
+                    {
+                        Md5Hash = file.Md5Hash ?? "",
+                        FileName = file.FileName ?? $"file_{index}",
+                        Signature = transaction.Signatures[index],
+                        XmlSignature = file.XmlSignature,
+                        NodeSignerPath = file.NodeSignerPath
+                    };
+                    await _txService.AppendSignedFileAsync(message.MaGiaoDich, signedFile);
                 }
             }
 

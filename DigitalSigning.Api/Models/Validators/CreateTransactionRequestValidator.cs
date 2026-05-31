@@ -17,8 +17,14 @@ public class CreateTransactionRequestValidator : AbstractValidator<CreateTransac
 
         RuleFor(x => x.FileUrls)
             .NotEmpty().WithMessage("At least one file URL is required")
-            .Must(urls => urls.All(u => Uri.TryCreate(u, UriKind.Absolute, out var uri) &&
-                                        (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)))
+            .Must(urls => urls.Count <= 10).WithMessage("Maximum 10 file URLs are allowed")
+            .Must(urls => urls.All(u => !string.IsNullOrWhiteSpace(u)))
+                .WithMessage("Each file URL must not be empty or whitespace")
+            .Must(urls => urls.All(u => u.Trim().Length <= 2048))
+                .WithMessage("Each file URL must not exceed 2048 characters")
+            .Must(urls => urls.Select(u => u.Trim()).All(u =>
+                Uri.TryCreate(u, UriKind.Absolute, out var uri) &&
+                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)))
             .WithMessage("Each file URL must be a valid HTTP or HTTPS URL");
 
         RuleFor(x => x.WebhookUrl)

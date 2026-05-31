@@ -23,6 +23,12 @@ COPY --from=build /app .
 ENV ASPNETCORE_URLS=http://+:5000
 ENV ASPNETCORE_ENVIRONMENT=Production
 
+# Rate-limiter defaults (overridable via docker run -e)
+ENV RateLimiter__ProviderCapacity=200
+ENV RateLimiter__ProviderRefillRate=100
+ENV RateLimiter__TenantCapacity=50
+ENV RateLimiter__TenantRefillRate=30
+
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:5000/health || exit 1
 

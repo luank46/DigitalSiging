@@ -30,7 +30,24 @@ jobs:
 
       - name: Test
         run: dotnet test DigitalSigningImproved.sln -c Release --no-build --verbosity normal
-        continue-on-error: true
+        continue-on-error: false
+
+      - name: Smoke test (staging deploy)
+        if: github.ref == 'refs/heads/develop'
+        run: |
+          echo "Waiting for API to be ready..."
+          sleep 15
+          for i in {1..10}; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://staging.example.com/health || echo "000")
+            echo "Attempt $i: HTTP $HTTP_CODE"
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Health check failed after 10 attempts"
+          exit 1
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

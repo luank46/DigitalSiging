@@ -28,10 +28,11 @@ namespace DigitalSigning.Workers.FilePrepare
             IMessagePublisher publisher,
             IIdempotencyService idempotency,
             IMessageConsumer consumer,
+            IMessageDedupService dedupService,
             IFileDownloader downloader,
             ITransactionService txService,
             IGridFsService gridFs)
-            : base(logger, publisher, idempotency, consumer)
+            : base(logger, publisher, idempotency, consumer, dedupService)
         {
             _downloader = downloader;
             _txService = txService;

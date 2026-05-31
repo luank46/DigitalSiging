@@ -34,7 +34,7 @@ namespace DigitalSigning.Workers.Provider
             IServiceProvider serviceProvider,
             IConnectionMultiplexer redis,
             FileLockService fileLock)
-            : base(logger, publisher, idempotency, consumer, serviceProvider)
+            : base(logger, publisher, idempotency, consumer, dedupService: null, serviceProvider: serviceProvider)
         {
             _txService = txService;
             _providerFactory = providerFactory;
