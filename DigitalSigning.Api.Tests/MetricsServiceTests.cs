@@ -11,12 +11,9 @@ public class MetricsServiceTests
     [Fact]
     public void IncrementCounter_SanitizesLabels()
     {
-        // Arrange: We need to verify via reflection that the private method works.
-        // Instead, we rely on the fact that MetricsService.IncrementCounter doesn't throw
-        // on special characters — the sanitizer replaces them silently.
         var service = new MetricsService();
         var ex = Record.Exception(() =>
-            service.IncrementCounter("test.counter", new[] { "tenant:school-1", "provider:VNPT" }));
+            service.IncrementCounter("test_sanitize_labels", new[] { "tenant:school-1", "provider:VNPT" }));
         ex.Should().BeNull();
     }
 
@@ -25,7 +22,7 @@ public class MetricsServiceTests
     {
         var service = new MetricsService();
         var ex = Record.Exception(() =>
-            service.IncrementCounter("test.counter", new[]
+            service.IncrementCounter("test_special_chars", new[]
             {
                 "tenant:school.1/district\"2\"",
                 "provider:VNPT$special"
@@ -38,7 +35,7 @@ public class MetricsServiceTests
     {
         var service = new MetricsService();
         var ex = Record.Exception(() =>
-            service.IncrementCounter("test.counter", null));
+            service.IncrementCounter("test_empty_labels", null));
         ex.Should().BeNull();
     }
 }

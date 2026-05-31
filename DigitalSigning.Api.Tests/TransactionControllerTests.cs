@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
+using StackExchange.Redis;
 
 namespace DigitalSigning.Api.Tests;
 
@@ -22,29 +23,67 @@ public class TransactionControllerTests
     private readonly Mock<IMetricsService> _metricsMock = new();
     private readonly Mock<ILogger<TransactionController>> _loggerMock = new();
     private readonly Mock<IRateLimiter> _rateLimiterMock = new();
+    private readonly Mock<FileLockService> _fileLockMock;
     private readonly FeatureFlags _featureFlags = new() { IdempotencyV2 = true };
 
     private readonly TransactionController _controller;
+    private readonly TransactionController _controllerV1;
+    private readonly FileLockService _fileLock;
 
     public TransactionControllerTests()
     {
         _rateLimiterMock.Setup(r => r.TryAcquire(It.IsAny<ProviderType>(), It.IsAny<string>()))
             .Returns(true);
 
-        _controller = new TransactionController(
+        // FileLockService setup
+        _fileLock = CreateFileLockService();
+
+        _controller = CreateController(_featureFlags);    // V2 (default)
+        _controllerV1 = CreateController(new FeatureFlags { IdempotencyV2 = false });
+    }
+
+    private FileLockService CreateFileLockService()
+    {
+        var redisMock = new Mock<StackExchange.Redis.IConnectionMultiplexer>();
+        var dbMock = new Mock<StackExchange.Redis.IDatabase>();
+        redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
+            .Returns(dbMock.Object);
+        dbMock.Setup(d => d.KeyExistsAsync(It.IsAny<StackExchange.Redis.RedisKey>(), It.IsAny<CommandFlags>()))
+            .ReturnsAsync(false);
+        dbMock.Setup(d => d.LockTakeAsync(
+                It.IsAny<StackExchange.Redis.RedisKey>(),
+                It.IsAny<StackExchange.Redis.RedisValue>(),
+                It.IsAny<TimeSpan>(),
+                It.IsAny<CommandFlags>()))
+            .ReturnsAsync(true);
+        dbMock.Setup(d => d.LockReleaseAsync(
+                It.IsAny<StackExchange.Redis.RedisKey>(),
+                It.IsAny<StackExchange.Redis.RedisValue>(),
+                It.IsAny<CommandFlags>()))
+            .ReturnsAsync(true);
+        var loggerFactory = LoggerFactory.Create(b => { });
+        var fileLockLogger = loggerFactory.CreateLogger<FileLockService>();
+        return new FileLockService(redisMock.Object, fileLockLogger);
+    }
+
+    private TransactionController CreateController(FeatureFlags flags)
+    {
+        var controller = new TransactionController(
             _txServiceMock.Object,
             _publisherMock.Object,
             _idempotencyMock.Object,
             _metricsMock.Object,
             _rateLimiterMock.Object,
-            _featureFlags,
-            _loggerMock.Object);
-
-        // Default HTTP context
-        _controller.ControllerContext = new ControllerContext
+            flags,
+            _fileLock,
+            _loggerMock.Object)
         {
-            HttpContext = new DefaultHttpContext()
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext()
+            }
         };
+        return controller;
     }
 
     private static CreateTransactionRequest ValidRequest() => new()
@@ -390,5 +429,58 @@ public class TransactionControllerTests
 
         // Assert
         result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    // ── V1 Idempotency Fallback ──────────────────────────────────────
+
+    [Fact]
+    public async Task CreateTransaction_V1Fallback_WithNewKey_CreatesTransaction()
+    {
+        // Arrange
+        var request = ValidRequest();
+        request.IdempotencyKey = "v1-new-key";
+
+        _idempotencyMock.Setup(s => s.GetByIdempotencyKeyAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync((IdempotencyKey?)null);
+        _idempotencyMock.Setup(s => s.CheckAndStoreAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(IdempotencyResult.Added);
+        _txServiceMock.Setup(s => s.CreateAsync(It.IsAny<Transaction>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Transaction tx, CancellationToken _) => tx);
+
+        // Act
+        var result = await _controllerV1.CreateTransaction(request);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        _txServiceMock.Verify(s => s.CreateAsync(It.IsAny<Transaction>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTransaction_V1Fallback_WithDuplicateKey_StillCreatesTransaction()
+    {
+        // Arrange
+        var request = ValidRequest();
+        request.IdempotencyKey = "v1-dup-key";
+
+        // V1 fallback only logs duplicate — still proceeds to create new transaction
+        _idempotencyMock.Setup(s => s.GetByIdempotencyKeyAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(new IdempotencyKey
+            {
+                TenantId = "school-1",
+                Key = "v1-dup-key",
+                TransactionId = "existing-tx-id"
+            });
+        _idempotencyMock.Setup(s => s.CheckAndStoreAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(IdempotencyResult.Duplicate);
+        _txServiceMock.Setup(s => s.CreateAsync(It.IsAny<Transaction>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Transaction tx, CancellationToken _) => tx);
+
+        // Act
+        var result = await _controllerV1.CreateTransaction(request);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        // V1 fallback should still create a new transaction despite duplicate key
+        _txServiceMock.Verify(s => s.CreateAsync(It.IsAny<Transaction>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 }

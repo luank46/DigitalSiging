@@ -68,6 +68,10 @@ namespace DigitalSigning.Workers.Provider
                 Provider = message.Provider,
                 MaNhaPhatHanh = transaction.MaNhaPhatHanh,
                 Username = transaction.UserName,
+                // Password is passed through — it's already decrypted by GetByMaGiaoDichAsync
+                // and is required by the CA provider API. The provider services
+                // (VnptProviderService, BkavProviderService, etc.) must not log or serialize
+                // this field in plaintext.
                 Password = transaction.Password,
                 SerialNumber = transaction.SeriNumber,
                 Certificate = transaction.Certificate,

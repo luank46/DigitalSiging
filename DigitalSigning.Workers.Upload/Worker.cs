@@ -64,10 +64,16 @@ namespace DigitalSigning.Workers.Upload
                     file.FileName, file.Md5Hash);
 
                 // Release file lock now that signing + append + upload complete
+                // Only release if owned by this transaction (safe release)
                 if (!string.IsNullOrEmpty(file.Md5Hash))
                 {
-                    await _fileLock.ReleaseByMd5Async(file.Md5Hash);
-                    Logger.LogInformation("UploadWorker: released lock for file {Md5}", file.Md5Hash);
+                    var released = await _fileLock.SafeReleaseAsync(
+                        file.Md5Hash, message.MaGiaoDich);
+                    if (released)
+                        Logger.LogInformation("UploadWorker: released lock for file {Md5}", file.Md5Hash);
+                    else
+                        Logger.LogWarning("UploadWorker: lock for file {Md5} owned by another tx, skipping release",
+                            file.Md5Hash);
                 }
             }
 

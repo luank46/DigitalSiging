@@ -31,12 +31,7 @@ public class CreateTransactionRequestValidator : AbstractValidator<CreateTransac
             .Must(u => string.IsNullOrWhiteSpace(u) || Uri.TryCreate(u, UriKind.Absolute, out _))
             .WithMessage("WebhookUrl must be a valid URL if provided");
 
-        // Validate email only when SignerInfo.Email is present
-        When(x => x.SignerInfo != null && !string.IsNullOrWhiteSpace(x.SignerInfo.Email), () =>
-        {
-            RuleFor(x => x.SignerInfo!.Email)
-                .EmailAddress()
-                .WithMessage("Invalid email format");
-        });
+        // Email validation is handled by [EmailAddress] data annotation on SignerInfoDto.Email.
+        // FluentValidation rule removed to avoid duplicate validation.
     }
 }

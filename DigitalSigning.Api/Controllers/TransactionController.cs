@@ -129,37 +129,6 @@ public class TransactionController : ControllerBase
                 });
             }
 
-            // File-level lock: check BEFORE idempotency (fail fast)
-            var lockedFiles = new List<string>();
-            foreach (var fileUrl in request.FileUrls)
-            {
-                var urlHash = Core.Services.FileLockService.ComputeUrlHashStatic(fileUrl.Trim());
-                if (await _fileLock.IsLockedAsync(urlHash))
-                {
-                    lockedFiles.Add(fileUrl);
-                }
-            }
-
-            if (lockedFiles.Count > 0)
-            {
-                _logger.LogWarning(
-                    "File lock conflict for {LockedCount} of {TotalCount} files. Locked URLs: {Locked}",
-                    lockedFiles.Count, request.FileUrls.Count, string.Join("; ", lockedFiles));
-
-                _metricsService.IncrementCounter("api_file_lock_conflicts_total", new[]
-                {
-                    $"tenant:{request.TenantId}"
-                });
-
-                return StatusCode(409, new ApiErrorResponse
-                {
-                    ErrorCode = Core.Enums.ErrorCode.DuplicateRequest.ToString(),
-                    Message = "Một hoặc nhiều file đang được ký bởi giao dịch khác. Vui lòng thử lại sau.",
-                    Details = $"Số file bị khóa: {lockedFiles.Count}/{request.FileUrls.Count}",
-                    TraceId = traceId
-                });
-            }
-
             // Check idempotency (if key provided)
             if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
             {
@@ -186,19 +155,24 @@ public class TransactionController : ControllerBase
                         }
 
                         _logger.LogWarning(
-                            "Idempotency key {Key} references non-existent transaction {TxId}. Creating new.",
+                            "Idempotency key {Key} references non-existent transaction {TxId}. Will create new mapping.",
                             request.IdempotencyKey, existingKey.TransactionId);
+
+                        // Delete the stale key so the new transaction mapping can be stored
+                        try { await _idempotencyService.DeleteKeyAsync(
+                            request.TenantId, request.IdempotencyKey); } catch { }
                     }
                 }
                 else
                 {
-                    // V1 (fallback): original behavior — just log duplicate
-                    var result = await _idempotencyService.CheckAndStoreAsync(
-                        request.TenantId,
-                        request.IdempotencyKey,
-                        Guid.NewGuid().ToString("N"));
+                    // V1 (fallback): log duplicate detection only.
+                    // Actual storage happens in the CheckAndStoreAsync call below
+                    // (lines ~240) with the real maGiaoDich, ensuring the key
+                    // always points to the actual transaction.
+                    var keyExists = await _idempotencyService.GetByIdempotencyKeyAsync(
+                        request.TenantId, request.IdempotencyKey);
 
-                    if (result == IdempotencyResult.Duplicate)
+                    if (keyExists != null)
                     {
                         _logger.LogInformation("Duplicate IdempotencyKey detected (V1 fallback): {Key}",
                             request.IdempotencyKey);
@@ -206,9 +180,10 @@ public class TransactionController : ControllerBase
                 }
             }
 
-            // Acquire lock for all files, auto-release on exception
+            // Acquire lock + process in nested try-finally to ensure lock cleanup
             var lockHandles = new List<IAsyncDisposable>(request.FileUrls.Count);
-
+            try
+            {
             // Create transaction document
             var maGiaoDich = Guid.NewGuid().ToString("N");
 
@@ -219,8 +194,22 @@ public class TransactionController : ControllerBase
                         $"{request.TenantId}:{maGiaoDich}",
                         TimeSpan.FromMinutes(10), ct);
 
-                    if (lockHandle != null)
-                        lockHandles.Add(lockHandle);
+                    if (lockHandle == null)
+                    {
+                        _logger.LogWarning("File lock conflict on URL: {Url}", fileUrl);
+                        _metricsService.IncrementCounter("api_file_lock_conflicts_total", new[]
+                        {
+                            $"tenant:{request.TenantId}"
+                        });
+                        return StatusCode(409, new ApiErrorResponse
+                        {
+                            ErrorCode = Core.Enums.ErrorCode.DuplicateRequest.ToString(),
+                            Message = "Một hoặc nhiều file đang được ký bởi giao dịch khác. Vui lòng thử lại sau.",
+                            Details = $"File bị khóa: {fileUrl}",
+                            TraceId = traceId
+                        });
+                    }
+                    lockHandles.Add(lockHandle);
                 }
 
             var transaction = new Transaction
@@ -299,6 +288,12 @@ public class TransactionController : ControllerBase
                 CurrentStatus = transaction.CurrentStatus
             });
         }
+        finally
+        {
+            foreach (var handle in lockHandles)
+                await handle.DisposeAsync();
+        }
+            }
         catch (OperationCanceledException)
         {
             _logger.LogInformation("CreateTransaction cancelled for TenantId={TenantId}", request.TenantId);
@@ -359,7 +354,9 @@ public class TransactionController : ControllerBase
     [ProducesResponseType(typeof(TransactionResponse), 200)]
     [ProducesResponseType(typeof(ApiErrorResponse), 404)]
     [ProducesResponseType(typeof(ApiErrorResponse), 500)]
-    public async Task<IActionResult> GetTransaction([FromBody] GetTransactionRequest request)
+    public async Task<IActionResult> GetTransaction(
+        [FromBody] GetTransactionRequest request,
+        CancellationToken ct = default)
     {
         var traceId = System.Diagnostics.Activity.Current?.Id ?? HttpContext.TraceIdentifier;
 
