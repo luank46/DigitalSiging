@@ -52,7 +52,7 @@ logs/
 # Error and crash dumps
 *.dmp
 *.mdl
-*.core
+core.*
 crashdump.*
 
 # Windows specific
